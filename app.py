@@ -11,7 +11,7 @@ def load_models():
     # Menggunakan model T5 untuk menulis ulang/parafrase teks
     humanizer = pipeline("text2text-generation", model="Vamsi/T5_Paraphrase_Paws")
     # Menggunakan model pendeteksi apakah teks buatan AI atau Manusia
-    ai_detector = pipeline("text-classification", model="roberta-base-openai-detector")
+    ai_detector = pipeline("text-classification", model="openai-community/roberta-base-openai-detector")
     return humanizer, ai_detector
 
 humanizer_pipeline, detector_pipeline = load_models()

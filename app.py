@@ -1,89 +1,135 @@
 import streamlit as st
-from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+import random
+import re
+from groq import Groq
 
-# ==========================================
-# 1. SETUP MODEL AI (GRATIS DARI HUGGINGFACE)
-# ==========================================
-@st.cache_resource
-def load_models():
-    # Menggunakan AutoModel langsung untuk menghindari bug pipeline di Python 3.14
-    humanizer_tokenizer = AutoTokenizer.from_pretrained("Vamsi/T5_Paraphrase_Paws")
-    humanizer_model = AutoModelForSeq2SeqLM.from_pretrained("Vamsi/T5_Paraphrase_Paws")
+# Set Konfigurasi Halaman
+st.set_page_config(
+    page_title="Humanize AI & AI Detector",
+    page_icon="🤖",
+    layout="wide"
+)
+
+st.title("🤖 AI Text Detector & Humanizer")
+st.write("Deteksi teks buatan AI dan ubah gaya bahasanya menjadi seperti tulisan manusia alami.")
+
+# Sidebar untuk API Key Gratis (Groq)
+st.sidebar.header("⚙️ Pengaturan API")
+groq_api_key = st.sidebar.text_input(
+    "Masukkan Groq API Key (Gratis):", 
+    type="password",
+    help="Dapatkan API Key gratis di https://console.groq.com/keys"
+)
+
+st.sidebar.markdown("""
+---
+💡 **Petunjuk Bikin API Key Gratis:**
+1. Buka [console.groq.com](https://console.groq.com)
+2. Login / Daftar dengan akun Google
+3. Klik **API Keys** -> **Create API Key**
+4. Tempelkan kunci tersebut di kolom atas.
+""")
+
+# Fungsi Analisis AI Detector (Pola & Kosa Kata Khas AI)
+def analyze_ai_text(text):
+    words = text.split()
+    total_words = len(words)
     
-    # Menggunakan model pendeteksi AI yang sudah diperbaiki alamatnya
-    ai_detector = pipeline("text-classification", model="openai-community/roberta-base-openai-detector")
+    if total_words < 10:
+        return 0, "Teks terlalu pendek untuk dianalisis."
     
-    return humanizer_tokenizer, humanizer_model, ai_detector
+    ai_indicators = [
+        "furthermore", "moreover", "in conclusion", "furthermore", "testament",
+        "delve", "tapestry", "beacon", "vital role", "furthermore", "oleh karena itu",
+        "selain itu", "sebagai kesimpulan", "menjelajahi", "penting untuk dicatat"
+    ]
+    
+    score = 15
+    matches = [w for w in ai_indicators if w in text.lower()]
+    score += len(matches) * 12
+    
+    sentences = re.split(r'[.!?]+', text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    if sentences:
+        lens = [len(s.split()) for s in sentences]
+        avg_len = sum(lens) / len(lens)
+        if all(abs(l - avg_len) < 3 for l in lens):
+            score += 25
 
-h_tokenizer, h_model, detector_pipeline = load_models()
+    final_score = min(score, 98)
+    return final_score, matches
 
-# ==========================================
-# 2. CONTOH DATABASE TEKS (UNTUK CEK PLAGIASI)
-# ==========================================
-DATABASE_TEKS = [
-    "Kecerdasan buatan atau AI adalah teknologi yang mensimulasikan kecerdasan manusia.",
-    "Pembelajaran mesin merupakan cabang dari kecerdasan buatan yang fokus pada data.",
-    "Pendidikan di era digital membutuhkan adaptasi teknologi yang cepat dan merata."
-]
+# Tabs Fitur Utama
+tab1, tab2 = st.tabs(["🔍 AI Content Detector", "✍️ Humanize AI Text"])
 
-def cek_plagiasi(teks_input):
-    if not teks_input.strip():
-        return 0.0
-    semua_teks = [teks_input] + DATABASE_TEKS
-    vectorizer = TfidfVectorizer()
-    tfidf_matrix = vectorizer.fit_transform(semua_teks)
-    skor_kemiripan = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:])
-    skor_tertinggi = max(skor_kemiripan) * 100
-    return skor_tertinggi
-
-# ==========================================
-# 3. TAMPILAN APLIKASI WEB (STREAMLIT)
-# ==========================================
-st.set_page_config(page_title="HSW PurePen AI", layout="centered")
-
-st.title("✨ HSW PurePen AI Gratis")
-st.write("Aplikasi buatan Herni Satria Wulandari untuk cek plagiasi tingkat tinggi dan memanusiakan teks AI.")
-
-# Kolom Input Teks
-teks_pengguna = st.text_area("Masukkan Teks Anda di Sini:", height=200, placeholder="Ketik atau tempel teks buatan AI di sini...")
-
-col1, col2 = st.columns(2)
-
-# TOMBOL 1: CEK PLAGIASI & DETEKSI AI
-with col1:
-    if st.button("📊 Analisis Teks", use_container_width=True):
-        if teks_pengguna:
-            with st.spinner("Menganalisis teks..."):
-                skor_plagiasi = cek_plagiasi(teks_pengguna)
-                hasil_deteksi = detector_pipeline(teks_pengguna)
-                label = hasil_deteksi['label']
-                skor_ai = hasil_deteksi['score'] * 100
-                
-                st.subheader("Hasil Analisis:")
-                st.metric(label="Skor Plagiasi (Kemiripan)", value=f"{skor_plagiasi:.2f}%")
-                
-                if label == "Fake" or "AI" in label:
-                    st.error(f"Terdeteksi Buatan AI: {skor_ai:.2f}%")
+# TAB 1: AI DETECTOR
+with tab1:
+    st.subheader("Deteksi Apakah Teks Dibuat oleh AI")
+    input_text_det = st.text_area("Masukkan teks untuk dianalisis:", height=200, key="det_input")
+    
+    if st.button("Analisis Teks", type="primary"):
+        if not input_text_det.strip():
+            st.warning("Harap masukkan teks terlebih dahulu!")
+        else:
+            ai_percentage, matches = analyze_ai_text(input_text_det)
+            
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                st.metric("Skor AI Probabilitas", f"{ai_percentage}%")
+            
+            with col2:
+                if ai_percentage > 60:
+                    st.error("🚨 **Kemungkinan Besar Buatan AI**: Teks ini memiliki struktur dan kosakata khas AI.")
+                elif ai_percentage > 30:
+                    st.warning("⚠️ **Campuran (Hybrid)**: Teks mengandung beberapa pola tulisan AI.")
                 else:
-                    st.success(f"Terdeteksi Buatan Manusia: {skor_ai:.2f}%")
-        else:
-            st.warning("Silakan masukkan teks terlebih dahulu!")
+                    st.success("✅ **Tulisan Manusia**: Teks terlihat alami dan ditulis oleh manusia.")
+            
+            if matches:
+                st.caption(f"Kata/Frasa khas AI yang terdeteksi: `{', '.join(set(matches))}`")
 
-# TOMBOL 2: HUMANISASI TEKS
-with col2:
-    if st.button("🤖 Humanize Teks", use_container_width=True):
-        if teks_pengguna:
-            with st.spinner("Mengubah teks menjadi lebih manusiawi..."):
-                # Proses pembuatan teks manusiawi menggunakan tokenization manual yang lebih stabil
-                text_input = "paraphrase: " + teks_pengguna
-                inputs = h_tokenizer(text_input, return_tensors="pt", padding=True)
-                outputs = h_model.generate(**inputs, max_length=len(teks_pengguna)+50)
-                hasil_humanis = h_tokenizer.decode(outputs[0], skip_special_tokens=True)
-                
-                st.subheader("Hasil Humanisasi:")
-                st.write(hasil_humanis)
-                st.info("💡 Teks di atas telah ditulis ulang oleh AI agar struktur kalimatnya tidak kaku.")
+# TAB 2: HUMANIZE TEXT
+with tab2:
+    st.subheader("Ubah Teks AI Menjadi Tulisan Manusia Alami")
+    input_text_hum = st.text_area("Masukkan teks AI yang ingin di-humanize:", height=200, key="hum_input")
+    
+    tone = st.selectbox("Pilih Gaya Bahasa:", ["Santai & Natural", "Akademik Natural", "Profesional / Bisnis"])
+    
+    if st.button("Humanize Text ✨", type="primary"):
+        if not groq_api_key:
+            st.error("🔑 Harap masukkan Groq API Key gratis Anda di sidebar sebelah kiri!")
+        elif not input_text_hum.strip():
+            st.warning("Harap masukkan teks terlebih dahulu!")
         else:
-            st.warning("Silakan masukkan teks terlebih dahulu!")
+            try:
+                client = Groq(api_key=groq_api_key)
+                
+                prompt = f"""
+                Tugas Anda adalah merubah teks berikut agar lolos AI Detector (seperti Turnitin / ZeroGPT) dan terdengar 100% seperti buatan manusia alami.
+                
+                Instruksi:
+                1. Ubah frasa/kosa kata kaku khas AI (seperti "selain itu", "penting untuk dicatat", "tapestry", "delve") menjadi kata sehari-hari.
+                2. Variasikan panjang kalimat (gabungkan beberapa kalimat pendek, buat beberapa kalimat yang lebih panjang).
+                3. Gunakan gaya bahasa: {tone}.
+                4. Jaga agar arti dan fakta utama tetap sama persis.
+                5. HANYA berikan hasil teks yang sudah di-humanize tanpa pengantar/penjelasan tambahan.
+                
+                Teks asal:
+                {input_text_hum}
+                """
+                
+                with st.spinner("Sedang memproses teks..."):
+                    completion = client.chat.completions.create(
+                        model="llama-3.3-70b-versatile",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.7,
+                    )
+                    
+                    result = completion.choices[0].message.content
+                    
+                    st.subheader("Hasil Humanize:")
+                    st.success("Selesai!")
+                    st.text_area("Teks Hasil:", value=result, height=220)
+                    
+            except Exception as e:
+                st.error(f"Terjadi kesalahan: {e}")

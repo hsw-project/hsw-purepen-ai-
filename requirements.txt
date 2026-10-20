@@ -2,4 +2,5 @@ streamlit
 transformers
 torch
 scikit-learn
+sentencepiece
 tiktoken
